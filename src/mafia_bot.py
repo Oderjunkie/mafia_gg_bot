@@ -39,7 +39,9 @@ class interface:
     async def send(self, data):
         return await self.ws.send(dumps(data))
     async def recv(self, data):
-        return loads(await self.ws.recv(data))
+        back = loads(await self.ws.recv(data))
+        self.events.append(back)
+        return back
     async def changesetup(self, newcode):
         #roles = dict(map(lambda x:str.split(x, 'a'), str.split(newcode, 'b')))
         alg = pipe(objcurry(str.split, 'b'), curry(map, objcurry(str.split, 'a')), dict)
@@ -122,24 +124,24 @@ async def start_room(logindata, cookies, game_name: str = '', listed: bool = 0) 
     return connection
 
 
-def run_command(driver, command, payload=""):
+async def run_command(driver: interface, command: str, payload: str = "") -> tuple:
     if command == "!setup":
         change_setup_code(driver, payload)
     if command == "!spam":
         chat(driver, """>=( I'm the parity cop""")
     if command == "!start":
-        start_game = driver.find_elements_by_class_name("button")[3]
-        if start_game.is_enabled():
-            chat(driver, "Game starting, good luck!")
-            time.sleep(0.5)
-            start_game.click()
-            if pf.ABANDON == 0:
-                wait_until_next_game(driver)
-            else:
-                driver.get(r"https://mafia.gg")
-                start_room(driver, listed=1)  # You can't have unlisted abandoned games.
-        else:
-            chat(driver, "Not enough players!")
+        #start_game = driver.find_elements_by_class_name("button")[3]
+        #if start_game.is_enabled():
+        #    chat(driver, "Game starting, good luck!")
+        #    time.sleep(0.5)
+        #    start_game.click()
+        #    if pf.ABANDON == 0:
+        #        wait_until_next_game(driver)
+        #    else:
+        #        driver.get(r"https://mafia.gg")
+        #        start_room(driver, listed=1)  # You can't have unlisted abandoned games.
+        #else:
+        #    chat(driver, "Not enough players!")
     if command == "!semihelp":
         chat(driver, """type '!semi = setup1 setup2 setup3' etc.""")
     if command == "!semi":
@@ -159,7 +161,8 @@ def run_command(driver, command, payload=""):
         current_afk_requests += 1
         if current_afk_requests >= 3:
             current_afk_requests = 0
-            driver.find_elements_by_class_name("button")[1].click()
+            driver.send({'type': 'forceSpectate'})
+            #driver.find_elements_by_class_name("button")[1].click()
         else:
             chat(driver, "Need " + str((3 - current_afk_requests)) + " more !afk commands!")
     return ()
@@ -171,18 +174,19 @@ def wait_until_next_game(driver):
             data_messages = [i.get_attribute("data-text") for i in driver.find_elements_by_class_name("game-chronicle-sys-message-text")]
             if "The game has ended." in data_messages:
                 chat(driver, "The game is over!")
-                chat(driver, "Congrats to " + [j for j in data_messages if "Winning teams: " in j][0].split(":")[1] + " team(s) for the win!")
+                teams = [j for j in driver.events if j['type']=='system' and ("Winning teams: " in j['message'])][0].split(":")[1]
+                chat(driver, "Congrats to {} team(s) for the win!".format(teams))
                 time.sleep(1)
                 chat(driver, "Starting new lobby in 10 seconds")
                 time.sleep(10)
-                driver.find_elements_by_class_name("button")[1].click()
-                driver.find_elements_by_class_name("button")[-1].click()
+                #driver.find_elements_by_class_name("button")[1].click()
+                #driver.find_elements_by_class_name("button")[-1].click()
                 time.sleep(3)
                 chat(driver, "Bot is ready!")
                 return ()
 
 
-def unpack_setups():
+async def unpack_setups():
     with open(pf.SETUP_PATH, "r") as f:
         setup_blob = f.read()
     setups = setup_blob.split("\n")
@@ -215,8 +219,14 @@ async def main():
         current_text = "test"
         current_user = "user"
         while current_text[0] != "!":
-            current_text = driver.find_elements_by_class_name("game-chronicle-chat-text")[-1].text
-            current_user = driver.find_elements_by_class_name("game-chronicle-name")[-1].text
+            time.sleep(0.00001)
+            final = driver.recv()
+            if final['type']=='chat':
+                current_text = final['message']
+                if final['from']['model']=='user':
+                    current_user = loads(rq.get('https://mafia.gg/users/{}'.format(final['from']['userId'])).contents)[0]['username']
+                else:
+                    current_user = "???"
         trim = current_text[: (current_text + " ").index(" ")]
         chat(driver, "Executing command " + trim)
         time.sleep(0.5)
