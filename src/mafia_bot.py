@@ -1,7 +1,10 @@
 import time
 import random
-from selenium import webdriver
+from websockets import connect
+from json import loads, dumps
 from config import parameter_file as pf
+import requests as rq
+import asyncio
 
 ###############################
 ### Global Variables
@@ -12,68 +15,104 @@ naked_command_list = {"!spam", "!start", "!semihelp", "!possibilities", "!afk"}
 
 ###############################
 
+def pipe(*funcs):
+    def returned(*args, **kwargs):
+        for func in funcs:
+            new = func(*args, **kwargs)
+            args = (new, *args[1:])
+        return args[0]
+    return returned
+def objcurry(func, *outerargs, **outerkwargs):
+    def inner(*args, **kwargs):
+        return func(*args, *outerargs, **kwargs, **outerkwargs)
+    return inner
+def curry(func, *outerargs, **outerkwargs):
+    def inner(*args, **kwargs):
+        return func(*outerargs, *args, **outerkwargs, **kwargs)
+    return inner
 
-def chat(driver, message):
-    chat_bar = driver.find_element_by_xpath("""//input[@placeholder="Chat with the group…"]""")
-    chat_bar.send_keys(message + "\n")
+class interface:
+    def __init__(self, url):
+        self.settings = {}
+        self.ws.connect(url)
+    async def send(self, data):
+        return await self.ws.send(data)
+    async def recv(self, data):
+        return await self.ws.recv(data)
+    async def changesetup(self, newcode):
+        #roles = dict(map(lambda x:str.split(x, 'a'), str.split(newcode, 'b')))
+        alg = pipe(objcurry(str.split, 'b'), curry(map, objcurry(str.split, 'a')), dict)
+        roles = alg(newcode)
+        self.settings.update({'roles': roles})
 
 
-def change_setup_code(driver, code):
-    setup_options = driver.find_elements_by_class_name("button")[2]
-    setup_options.click()
-    try:
-        setup_code = driver.find_element_by_xpath("""//input[@placeholder="Paste setup code…"]""")
-        setup_code.clear()
-        setup_code.send_keys(code + "\n")
-    except:
-        chat(driver, "Invalid setup code!")
+async def chat(object, message):
+    #chat_bar = driver.find_element_by_xpath("""//input[@placeholder="Chat with the group…"]""")
+    #chat_bar.send_keys(message + "\n")
+    await object.send(dumps({'type': 'chat', 'message': message}))
+    return await object.recv()
+
+async def change_setup_code(object, code):
+    object.changesetup(code)
+    #setup_options = driver.find_elements_by_class_name("button")[2]
+    #setup_options.click()
+    #try:
+    #    setup_code = driver.find_element_by_xpath("""//input[@placeholder="Paste setup code…"]""")
+    #    setup_code.clear()
+    #    setup_code.send_keys(code + "\n")
+    #except:
+    #    chat(driver, "Invalid setup code!")
     return ()
 
 
-def start_up(path, url):
-    driver = webdriver.Chrome(path)
-    driver.implicitly_wait(5)
-    driver.get(url)
-    return driver
+#def start_up(roomname):
+    #driver = webdriver.Chrome(path)
+    #driver.implicitly_wait(5)
+    #driver.get(url)
+    #return driver
 
 
-def log_in(driver, username, password):
-    account_box = driver.find_element_by_class_name("account-box")
-    user_entry = account_box.find_elements_by_class_name("account-input")[0]
-    outerHTML = user_entry.get_attribute("outerHTML")
-    id = outerHTML[outerHTML.index("label for=") + 11 :][:18]
-    login = driver.find_element_by_id(id)
-    login.send_keys(username)
-    time.sleep(0.5)
-    login = driver.find_element_by_id(id[:-1] + "2")
-    login.send_keys(password)
-    login.send_keys("\n")
-    return ()
+def log_in(username, password):
+    login = rq.post('https://mafia.gg/api/user-session', json={'login': username, 'password': password})
+    return login
+    #account_box = driver.find_element_by_class_name("account-box")
+    #user_entry = account_box.find_elements_by_class_name("account-input")[0]
+    #outerHTML = user_entry.get_attribute("outerHTML")
+    #id = outerHTML[outerHTML.index("label for=") + 11 :]:18]
+    #login = driver.find_element_by_id(id)
+    #login.send_keys(username)
+    #time.sleep(0.5)
+    #login = driver.find_element_by_id(id[:-1] + "2")
+    #login.send_keys(password)
+    #login.send_keys("\n")
+    #return ()
 
 
-def start_room(driver, game_name="", listed=0):
-    if listed == 0:
-        unlisted = driver.find_element_by_class_name("checkbox")
-        unlisted.click()
-    time.sleep(0.5)
-    room_name_box = driver.find_elements_by_xpath("""//input[@type="text"]""")[1]
-    if game_name != "":
-        room_name_box.clear()
-        room_name_box.send_keys(game_name)
-    time.sleep(0.5)
-    submit = driver.find_element_by_xpath("""//button[@type="submit"]""")
-    submit.click()
-    time.sleep(0.5)
-    chat(driver, "Bot is ready!")
-    driver.find_elements_by_class_name("button")[0].click()
-    if pf.ABANDON == 1 and pf.PRIVILEGE_REQUIRED == 1:
-        chat(
-            driver,
-            "I've gone rogue and am hosting games and abandoning them! Type !possiblities to see the different setups that I am choosing between (and hiding the results). Type !start once there are enough players and I'll start. Three !afk will initiate an afk check. Welcome to semi-closed fun! (Please report players who should be blacklisted to whomever is running this bot)",
-        )
-        codes, descriptions = unpack_setups()
-        run_command(driver, "!semi", " ".join(codes))
-    return ()
+def start_room(login, game_name='', listed=0):
+    roomid = loads(rq.post('https://mafia.gg/api/rooms', json={'name': game_name, 'unlisted': not listed}, cookies=login.cookies.get_dict()).content)['id']
+    connection = loads(rq.get('https://mafia.gg/api/rooms/{}'.format(roomid), cookies=cookies).content)
+    #if listed == 0:
+    #    unlisted = driver.find_element_by_class_name("checkbox")
+    #    unlisted.click()
+    #time.sleep(0.5)
+    #room_name_box = driver.find_elements_by_xpath("""//input[@type="text"]""")[1]
+    #if game_name != "":
+    #    room_name_box.clear()
+    #    room_name_box.send_keys(game_name)
+    #time.sleep(0.5)
+    #submit = driver.find_element_by_xpath("""//button[@type="submit"]""")
+    #submit.click()
+    #time.sleep(0.5)
+    #chat(driver, "Bot is ready!")
+    #driver.find_elements_by_class_name("button")[0].click()
+    #if pf.ABANDON == 1 and pf.PRIVILEGE_REQUIRED == 1:
+    #    chat(
+    #        connection,
+    #        "I've gone rogue and am hosting games and abandoning them! Type !possiblities to see the different setups that I am choosing between (and hiding the results). Type !start once there are enough players and I'll start. Three !afk will initiate an afk check. Welcome to semi-closed fun! (Please report players who should be blacklisted to whomever is running this bot)",
+    #    )
+    #    codes, descriptions = unpack_setups()
+    #    run_command(driver, "!semi", " ".join(codes))
+    #return ()
 
 
 def run_command(driver, command, payload=""):
