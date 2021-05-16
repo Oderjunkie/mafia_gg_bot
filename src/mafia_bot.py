@@ -5,6 +5,7 @@ from json import loads, dumps
 from config import parameter_file as pf
 import requests as rq
 import asyncio
+from aiofile import AIOFile
 
 ###############################
 ### Global Variables
@@ -119,7 +120,7 @@ async def start_room(logindata, cookies, game_name: str = '', listed: bool = 0) 
             "I've gone rogue and am hosting games and abandoning them! Type !possiblities to see the different setups that I am choosing between (and hiding the results). Type !start once there are enough players and I'll start. Three !afk will initiate an afk check. Welcome to semi-closed fun! (Please report players who should be blacklisted to whomever is running this bot)",
         )
         codes, descriptions = unpack_setups()
-        run_command(driver, "!semi", " ".join(codes))
+        run_command(connection, "!semi", " ".join(codes))
     #return ()
     return connection
 
@@ -187,15 +188,16 @@ def wait_until_next_game(driver):
 
 
 async def unpack_setups():
-    with open(pf.SETUP_PATH, "r") as f:
-        setup_blob = f.read()
+    async with AIOFile(pf.SETUP_PATH, "r") as f:
+        setup_blob = await f.read()
     setups = setup_blob.split("\n")
     codes = []
     descriptions = []
     for i in setups:
         if ":" in i:
-            codes.append(i.split(":")[0])
-            descriptions.append(i.split(":")[1])
+            code, desc = i.split(":")
+            codes.append(code)
+            descriptions.append(desc)
     return (codes, descriptions)
 
 
@@ -213,7 +215,7 @@ async def unpack_setups():
 #time.sleep(0.5)
 #start_room(driver, pf.GAME_NAME, pf.LISTED)
 async def main():
-    driver = await start_room(*log_in(pf.USERNAME, pf.PASSWORD), pf.GAME_NAME, pf.LISTED)
+    driver = await start_room(*await log_in(pf.USERNAME, pf.PASSWORD), pf.GAME_NAME, pf.LISTED)
     
     while True:
         current_text = "test"
