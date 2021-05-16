@@ -34,11 +34,12 @@ def curry(func, *outerargs, **outerkwargs):
 class interface:
     def __init__(self, url):
         self.settings = {}
-        self.ws.connect(url)
+        self.events = []
+        self.ws = connect(url, ssl=True)
     async def send(self, data):
-        return await self.ws.send(data)
+        return await self.ws.send(dumps(data))
     async def recv(self, data):
-        return await self.ws.recv(data)
+        return loads(await self.ws.recv(data))
     async def changesetup(self, newcode):
         #roles = dict(map(lambda x:str.split(x, 'a'), str.split(newcode, 'b')))
         alg = pipe(objcurry(str.split, 'b'), curry(map, objcurry(str.split, 'a')), dict)
@@ -46,13 +47,13 @@ class interface:
         self.settings.update({'roles': roles})
 
 
-async def chat(object, message):
+async def chat(object: interface, message: str) -> dict:
     #chat_bar = driver.find_element_by_xpath("""//input[@placeholder="Chat with the group…"]""")
     #chat_bar.send_keys(message + "\n")
     await object.send(dumps({'type': 'chat', 'message': message}))
-    return await object.recv()
+    return loads(await object.recv())
 
-async def change_setup_code(object, code):
+async def change_setup_code(object: interface, code: str) -> tuple:
     object.changesetup(code)
     #setup_options = driver.find_elements_by_class_name("button")[2]
     #setup_options.click()
@@ -72,9 +73,9 @@ async def change_setup_code(object, code):
     #return driver
 
 
-def log_in(username, password):
+async def log_in(username: str, password: str) -> tuple:
     login = rq.post('https://mafia.gg/api/user-session', json={'login': username, 'password': password})
-    return login
+    return loads(login.contents), login.cookies.get_dict()
     #account_box = driver.find_element_by_class_name("account-box")
     #user_entry = account_box.find_elements_by_class_name("account-input")[0]
     #outerHTML = user_entry.get_attribute("outerHTML")
@@ -88,9 +89,12 @@ def log_in(username, password):
     #return ()
 
 
-def start_room(login, game_name='', listed=0):
+async def start_room(logindata, cookies, game_name: str = '', listed: bool = 0) -> interface:
     roomid = loads(rq.post('https://mafia.gg/api/rooms', json={'name': game_name, 'unlisted': not listed}, cookies=login.cookies.get_dict()).content)['id']
-    connection = loads(rq.get('https://mafia.gg/api/rooms/{}'.format(roomid), cookies=cookies).content)
+    info = loads(rq.get('https://mafia.gg/api/rooms/{}'.format(roomid), cookies=cookies).content)
+    connection = interface(info['engineUrl'])
+    await connection.send('type': 'clientHandshake', 'userId': logindata['id'], 'roomId': roomid, 'auth': info['auth'])
+    connection.events = await connection.recv()['events']
     #if listed == 0:
     #    unlisted = driver.find_element_by_class_name("checkbox")
     #    unlisted.click()
@@ -103,16 +107,19 @@ def start_room(login, game_name='', listed=0):
     #submit = driver.find_element_by_xpath("""//button[@type="submit"]""")
     #submit.click()
     #time.sleep(0.5)
+    # LOL NO WAITS
     #chat(driver, "Bot is ready!")
+    chat(connection, 'Bot is ready!')
     #driver.find_elements_by_class_name("button")[0].click()
-    #if pf.ABANDON == 1 and pf.PRIVILEGE_REQUIRED == 1:
-    #    chat(
-    #        connection,
-    #        "I've gone rogue and am hosting games and abandoning them! Type !possiblities to see the different setups that I am choosing between (and hiding the results). Type !start once there are enough players and I'll start. Three !afk will initiate an afk check. Welcome to semi-closed fun! (Please report players who should be blacklisted to whomever is running this bot)",
-    #    )
-    #    codes, descriptions = unpack_setups()
-    #    run_command(driver, "!semi", " ".join(codes))
+    if pf.ABANDON == 1 and pf.PRIVILEGE_REQUIRED == 1:
+        chat(
+            connection,
+            "I've gone rogue and am hosting games and abandoning them! Type !possiblities to see the different setups that I am choosing between (and hiding the results). Type !start once there are enough players and I'll start. Three !afk will initiate an afk check. Welcome to semi-closed fun! (Please report players who should be blacklisted to whomever is running this bot)",
+        )
+        codes, descriptions = unpack_setups()
+        run_command(driver, "!semi", " ".join(codes))
     #return ()
+    return connection
 
 
 def run_command(driver, command, payload=""):
@@ -193,33 +200,35 @@ def unpack_setups():
 
 # actual start
 
-driver = start_up(pf.PATH, pf.URL)
-try:
-    log_in(driver, pf.USERNAME, pf.PASSWORD)
-except:
-    driver.refresh()
-    log_in(driver, pf.USERNAME, pf.PASSWORD)
-time.sleep(0.5)
-start_room(driver, pf.GAME_NAME, pf.LISTED)
-
-
-while True:
-    current_text = "test"
-    current_user = "user"
-    while current_text[0] != "!":
-        current_text = driver.find_elements_by_class_name("game-chronicle-chat-text")[-1].text
-        current_user = driver.find_elements_by_class_name("game-chronicle-name")[-1].text
-    trim = current_text[: (current_text + " ").index(" ")]
-    chat(driver, "Executing command " + trim)
-    time.sleep(0.5)
-    if trim in naked_command_list:
-        run_command(driver, current_text[: (current_text + " ").index(" ")], "")
-    elif trim in payload_command_list and " = " in current_text:
-        if current_user in pf.PRIVILEGED_USERS or pf.PRIVILEGE_REQUIRED != 1:
-            command = current_text.split(" = ")[0]
-            payload = current_text.split(" = ")[1]
-            run_command(driver, command, payload)
+#driver = start_up(pf.PATH, pf.URL)
+#try:
+#    log_in(driver, pf.USERNAME, pf.PASSWORD)
+#except:
+#    driver.refresh()
+#    log_in(driver, pf.USERNAME, pf.PASSWORD)
+#time.sleep(0.5)
+#start_room(driver, pf.GAME_NAME, pf.LISTED)
+async def main():
+    driver = await start_room(*log_in(pf.USERNAME, pf.PASSWORD), pf.GAME_NAME, pf.LISTED)
+    
+    while True:
+        current_text = "test"
+        current_user = "user"
+        while current_text[0] != "!":
+            current_text = driver.find_elements_by_class_name("game-chronicle-chat-text")[-1].text
+            current_user = driver.find_elements_by_class_name("game-chronicle-name")[-1].text
+        trim = current_text[: (current_text + " ").index(" ")]
+        chat(driver, "Executing command " + trim)
+        time.sleep(0.5)
+        if trim in naked_command_list:
+            run_command(driver, current_text[: (current_text + " ").index(" ")], "")
+        elif trim in payload_command_list and " = " in current_text:
+            if current_user in pf.PRIVILEGED_USERS or pf.PRIVILEGE_REQUIRED != 1:
+                command = current_text.split(" = ")[0]
+                payload = current_text.split(" = ")[1]
+                run_command(driver, command, payload)
+            else:
+                chat(driver, "You aren't cool enough to use that command")
         else:
-            chat(driver, "You aren't cool enough to use that command")
-    else:
-        chat(driver, "Check syntax!")
+            chat(driver, "Check syntax!")
+asyncio.get_running_loop().run_until_complete(main())
