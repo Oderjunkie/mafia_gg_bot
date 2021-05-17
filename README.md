@@ -24,7 +24,7 @@ Run `./scripts/build-dev.sh` to build the dev/test environment.
 
 Some code for Mafia_Semi_Bot v0.5 by Anteaterking
 
-Requirements: Have Python3 on your computer, the selenium python package, and "chromedriver" (https://sites.google.com/a/chromium.org/chromedriver/downloads)
+Requirements: Have Python3 on your computer.
 
 BEFORE RUNNING:
 
@@ -36,7 +36,7 @@ TO USE:
 
 Just run "python mafia_bot.py" in a terminal from the folder it's contained in!
 
-This will open up a chromedriver browser, attempt to login to mafia.gg, and automatically open a room. From this point anyone can interact with the bot through a limited number of commands (with some commands such as !setup and !semi being restricted to just privileged users). Look through the options in parameters for what mode you want to run it in: unlisted/listed, privileged, abandon or stay in same room, etc. For example, if you just want the bot to make janitorial setups all day long, set listed to 1 and abandon to 1 with a setup text file with just Janitorial in it. That seems like a waste though.
+This will automatically open a room, and spit out the link in the terminal window, From this point anyone can interact with the bot through a limited number of commands (with some commands such as !setup and !semi being restricted to just privileged users). Look through the options in parameters for what mode you want to run it in: unlisted/listed, privileged, abandon or stay in same room, etc. For example, if you just want the bot to make janitorial setups all day long, set listed to 1 and abandon to 1 with a setup text file with just Janitorial in it. That seems like a waste though.
 
 Currently, games will inherit the last properties in terms of decks, timers, whether roles are hidden, whether setup is hidden, etc. so you'll want to set those to the right things before letting it lose.
 
