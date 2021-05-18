@@ -83,7 +83,7 @@ async def change_setup_code(object: interface, code: str) -> None:
     #return driver
 
 
-async def log_in(username: str, password: str) -> None:
+async def log_in(username: str, password: str) -> tuple:
     login = rq.post('https://mafia.gg/api/user-session', json={'login': username, 'password': password})
     return loads(login.content), login.cookies.get_dict()
     #account_box = driver.find_element_by_class_name("account-box")
